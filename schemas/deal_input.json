@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SwarmCapitalMarkets Deal Input",
+  "type": "object",
+  "required": ["asset_type", "purchase_price", "noi"],
+  "properties": {
+    "asset_type": {"type": "string", "enum": ["office", "industrial", "multifamily", "retail", "hotel", "data_center", "mixed_use", "cold_storage"]},
+    "purchase_price": {"type": "number", "description": "Purchase price in USD"},
+    "noi": {"type": "number", "description": "Net operating income in USD"},
+    "occupancy": {"type": "number", "minimum": 0, "maximum": 1},
+    "market": {"type": "string"},
+    "senior_ltv": {"type": "number", "minimum": 0, "maximum": 1},
+    "senior_rate": {"type": "number"},
+    "mezz_ltv": {"type": "number", "minimum": 0, "maximum": 1},
+    "mezz_rate": {"type": "number"},
+    "equity_pct": {"type": "number", "minimum": 0, "maximum": 1},
+    "exit_cap": {"type": "number"},
+    "hold_period_years": {"type": "integer"},
+    "noi_growth": {"type": "number"},
+    "sponsor_aum": {"type": "number"},
+    "dscr_requirement": {"type": "number"},
+    "ltv_limit": {"type": "number"},
+    "debt_yield_min": {"type": "number"},
+    "amortization_years": {"type": "integer"},
+    "loan_term_years": {"type": "integer"},
+    "market_conditions": {
+      "type": "object",
+      "properties": {
+        "vacancy_trend": {"type": "string", "enum": ["rising", "stable", "declining"]},
+        "cap_rate_trend": {"type": "string", "enum": ["expanding", "stable", "compressing"]},
+        "volume_trend": {"type": "string", "enum": ["declining", "stable", "increasing"]},
+        "rate_environment": {"type": "string", "enum": ["rising", "stable", "declining"]}
+      }
+    }
+  }
+}
