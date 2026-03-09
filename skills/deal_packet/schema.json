@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DealPacket Output",
+  "type": "object",
+  "required": ["skill", "status", "property", "financials"],
+  "properties": {
+    "skill": {"type": "string", "const": "deal_packet"},
+    "deal_id": {"type": "string", "pattern": "^dp-\\d{8}-\\d{3}$"},
+    "status": {"type": "string", "enum": ["complete", "incomplete", "flagged"]},
+    "property": {
+      "type": "object",
+      "required": ["asset_type"],
+      "properties": {
+        "asset_type": {"type": "string", "enum": ["office", "multifamily", "industrial", "retail", "hospitality", "mixed_use", "data_center", "cold_storage"]},
+        "market": {"type": "string"},
+        "submarket": {"type": "string"},
+        "sf": {"type": "integer", "minimum": 0},
+        "units": {"type": "integer", "minimum": 0},
+        "year_built": {"type": "integer"},
+        "occupancy": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "financials": {
+      "type": "object",
+      "required": ["purchase_price", "noi"],
+      "properties": {
+        "purchase_price": {"type": "number", "minimum": 0},
+        "noi": {"type": "number"},
+        "gross_revenue": {"type": "number", "minimum": 0},
+        "operating_expenses": {"type": "number", "minimum": 0},
+        "capex_reserves": {"type": "number", "minimum": 0}
+      }
+    },
+    "derived_metrics": {
+      "type": "object",
+      "properties": {
+        "cap_rate": {"type": "number", "minimum": 0, "maximum": 0.30},
+        "dscr": {"type": "number", "minimum": 0, "maximum": 5.0},
+        "debt_yield": {"type": "number", "minimum": 0, "maximum": 0.30},
+        "loan_constant": {"type": "number"},
+        "ltv": {"type": "number", "minimum": 0, "maximum": 1.5},
+        "break_even_occupancy": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "debt_terms": {
+      "type": "object",
+      "properties": {
+        "loan_amount": {"type": "number", "minimum": 0},
+        "interest_rate": {"type": "number", "minimum": 0, "maximum": 0.25},
+        "term_years": {"type": "integer", "minimum": 1},
+        "amortization_years": {"type": "integer", "minimum": 1},
+        "io_period_months": {"type": "integer", "minimum": 0},
+        "annual_debt_service": {"type": "number", "minimum": 0}
+      }
+    },
+    "missing_fields": {"type": "array", "items": {"type": "string"}},
+    "sanity_flags": {"type": "array", "items": {"type": "string"}},
+    "ready_for_underwriting": {"type": "boolean"}
+  }
+}

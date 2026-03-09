@@ -1,43 +1,79 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "SwarmCapitalMarkets Decision Output",
+  "description": "Canonical decision output from the deal analysis pipeline",
   "type": "object",
-  "required": ["decision", "confidence", "rationale"],
+  "required": ["deal_id", "decision", "confidence", "analysis"],
   "properties": {
-    "decision": {"type": "string", "enum": ["approve", "approve_with_conditions", "restructure", "decline", "watchlist", "distressed_opportunity"]},
+    "deal_id": {"type": "string"},
+    "decision": {
+      "type": "string",
+      "enum": ["approve", "approve_with_conditions", "restructure", "decline", "watchlist", "distressed_opportunity"]
+    },
     "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-    "analysis": {
-      "type": "object",
-      "properties": {
-        "cap_rate": {"type": "number"},
-        "dscr": {"type": "number"},
-        "debt_yield": {"type": "number"},
-        "max_loan": {"type": "number"},
-        "binding_constraint": {"type": "string", "enum": ["ltv", "dscr", "debt_yield"]},
-        "break_even_occupancy": {"type": "number"},
-        "levered_irr": {"type": "number"},
-        "unlevered_irr": {"type": "number"},
-        "equity_multiple": {"type": "number"}
-      }
+    "recommended_max_loan": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Max loan rounded to nearest $100K"
+    },
+    "binding_constraint": {
+      "type": "string",
+      "enum": ["ltv", "dscr", "debt_yield"]
     },
     "risk_flags": {
       "type": "array",
       "items": {"type": "string"},
-      "maxItems": 5
+      "maxItems": 5,
+      "description": "Lowercase snake_case risk identifiers"
     },
-    "conditions": {
-      "type": "array",
-      "items": {"type": "string"}
+    "capital_stack_recommendation": {
+      "type": "object",
+      "description": "Recommended capital stack structure (from CapStackBuilder)"
     },
-    "rationale": {"type": "string"},
-    "memo_summary": {"type": "string"},
-    "scenario_outcomes": {
+    "analysis": {
+      "type": "object",
+      "description": "Deterministic metrics computed by metrics engine",
+      "properties": {
+        "cap_rate": {"type": "number", "minimum": 0, "maximum": 0.30},
+        "dscr": {"type": "number", "minimum": 0, "maximum": 5.0},
+        "ltv": {"type": "number", "minimum": 0, "maximum": 1.5},
+        "debt_yield": {"type": "number", "minimum": 0, "maximum": 0.30},
+        "max_loan_dscr": {"type": "number", "minimum": 0},
+        "max_loan_ltv": {"type": "number", "minimum": 0},
+        "break_even_occupancy": {"type": "number", "minimum": 0, "maximum": 1},
+        "refinancing_gap": {"type": "number", "minimum": 0},
+        "levered_irr": {"type": "number"},
+        "unlevered_irr": {"type": "number"},
+        "equity_multiple": {"type": "number", "minimum": 0}
+      }
+    },
+    "scenario_analysis": {
       "type": "object",
       "properties": {
-        "base": {"type": "object"},
+        "base": {
+          "type": "object",
+          "properties": {
+            "noi": {"type": "number"},
+            "dscr": {"type": "number"},
+            "ltv": {"type": "number"},
+            "debt_yield": {"type": "number"},
+            "property_value": {"type": "number"}
+          }
+        },
         "downside": {"type": "object"},
         "severe": {"type": "object"}
       }
-    }
+    },
+    "conditions": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Required for approve_with_conditions"
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 50,
+      "description": "IC-grade reasoning for the decision"
+    },
+    "memo_summary": {"type": "string"}
   }
 }

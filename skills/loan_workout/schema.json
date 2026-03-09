@@ -1,0 +1,55 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LoanWorkout Output",
+  "type": "object",
+  "required": ["skill", "current_loan", "workout_options", "recommended_strategy"],
+  "properties": {
+    "skill": {"type": "string", "const": "loan_workout"},
+    "deal_id": {"type": "string"},
+    "current_loan": {
+      "type": "object",
+      "required": ["balance", "rate", "current_dscr"],
+      "properties": {
+        "balance": {"type": "number", "minimum": 0},
+        "rate": {"type": "number", "minimum": 0, "maximum": 0.25},
+        "maturity_date": {"type": "string"},
+        "monthly_payment": {"type": "number", "minimum": 0},
+        "current_dscr": {"type": "number", "minimum": 0, "maximum": 5.0},
+        "current_ltv": {"type": "number", "minimum": 0, "maximum": 3.0},
+        "recourse": {"type": "string", "enum": ["full", "partial", "non_recourse"]},
+        "loan_type": {"type": "string", "enum": ["balance_sheet", "cmbs", "agency", "bank"]}
+      }
+    },
+    "property_value": {"type": "number", "minimum": 0},
+    "workout_options": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["strategy", "npv", "recovery_rate"],
+        "properties": {
+          "strategy": {"type": "string", "enum": ["modification", "ab_split", "dpo", "forbearance", "foreclosure"]},
+          "terms": {"type": "object"},
+          "npv": {"type": "number"},
+          "recovery_rate": {"type": "number", "minimum": 0, "maximum": 1.5},
+          "timeline_months": {"type": "integer", "minimum": 0},
+          "lender_costs": {"type": "number", "minimum": 0},
+          "borrower_impact": {"type": "string"},
+          "probability_of_success": {"type": "number", "minimum": 0, "maximum": 1}
+        }
+      }
+    },
+    "recommended_strategy": {"type": "string"},
+    "npv_comparison": {
+      "type": "object",
+      "properties": {
+        "modification_npv": {"type": "number"},
+        "ab_split_npv": {"type": "number"},
+        "dpo_npv": {"type": "number"},
+        "foreclosure_npv": {"type": "number"},
+        "best_recovery": {"type": "string"}
+      }
+    },
+    "risk_flags": {"type": "array", "items": {"type": "string"}, "maxItems": 5},
+    "negotiation_notes": {"type": "string"}
+  }
+}

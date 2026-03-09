@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Underwrite Output",
+  "type": "object",
+  "required": ["skill", "loan_sizing", "underwriting_metrics", "risk_flags"],
+  "properties": {
+    "skill": {"type": "string", "const": "underwrite"},
+    "deal_id": {"type": "string"},
+    "loan_sizing": {
+      "type": "object",
+      "required": ["max_loan", "binding_constraint"],
+      "properties": {
+        "ltv_constrained": {"type": "number", "minimum": 0},
+        "dscr_constrained": {"type": "number", "minimum": 0},
+        "debt_yield_constrained": {"type": "number", "minimum": 0},
+        "max_loan": {"type": "number", "minimum": 0},
+        "binding_constraint": {"type": "string", "enum": ["ltv", "dscr", "debt_yield"]},
+        "recommended_loan": {"type": "number", "minimum": 0}
+      }
+    },
+    "underwriting_metrics": {
+      "type": "object",
+      "properties": {
+        "dscr": {"type": "number", "minimum": 0, "maximum": 5.0},
+        "ltv": {"type": "number", "minimum": 0, "maximum": 1.5},
+        "debt_yield": {"type": "number", "minimum": 0, "maximum": 0.30},
+        "loan_constant": {"type": "number"},
+        "break_even_occupancy": {"type": "number", "minimum": 0, "maximum": 1},
+        "noi_cushion_pct": {"type": "number"}
+      }
+    },
+    "sensitivity_matrix": {
+      "type": "object",
+      "properties": {
+        "rows": {"type": "array", "items": {"type": "string"}},
+        "columns": {"type": "array", "items": {"type": "string"}},
+        "values": {"type": "array", "items": {"type": "array", "items": {"type": "number"}}}
+      }
+    },
+    "risk_flags": {"type": "array", "items": {"type": "string"}, "maxItems": 5},
+    "risk_score": {"type": "number", "minimum": 0, "maximum": 100},
+    "recommendation": {"type": "string"},
+    "assumptions": {"type": "object"}
+  }
+}

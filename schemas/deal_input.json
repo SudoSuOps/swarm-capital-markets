@@ -1,36 +1,99 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "SwarmCapitalMarkets Deal Input",
+  "description": "Canonical deal input schema for all SwarmCapitalMarkets skill chains",
   "type": "object",
   "required": ["asset_type", "purchase_price", "noi"],
   "properties": {
-    "asset_type": {"type": "string", "enum": ["office", "industrial", "multifamily", "retail", "hotel", "data_center", "mixed_use", "cold_storage"]},
-    "purchase_price": {"type": "number", "description": "Purchase price in USD"},
-    "noi": {"type": "number", "description": "Net operating income in USD"},
-    "occupancy": {"type": "number", "minimum": 0, "maximum": 1},
-    "market": {"type": "string"},
+    "deal_id": {
+      "type": "string",
+      "description": "Unique deal identifier"
+    },
+    "asset_type": {
+      "type": "string",
+      "enum": ["office", "industrial", "multifamily", "retail", "hotel", "data_center", "mixed_use", "cold_storage"],
+      "description": "Property asset class"
+    },
+    "market": {
+      "type": "string",
+      "description": "Metropolitan market (e.g., Dallas-Fort Worth, Manhattan)"
+    },
+    "purchase_price": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Purchase price in USD (raw number, no abbreviations)"
+    },
+    "noi": {
+      "type": "number",
+      "description": "Net operating income in USD"
+    },
+    "occupancy": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Current occupancy as decimal (0.92 not 92%)"
+    },
+    "debt_request": {
+      "type": "object",
+      "description": "Loan request parameters",
+      "properties": {
+        "loan_amount": {"type": "number", "minimum": 0},
+        "ltv_requested": {"type": "number", "minimum": 0, "maximum": 1},
+        "interest_rate": {"type": "number", "description": "As decimal: 0.065 not 6.5%"},
+        "rate_type": {"type": "string", "enum": ["fixed", "floating"]},
+        "spread_bps": {"type": "number", "description": "Spread over index in basis points (floating only)"},
+        "index": {"type": "string", "enum": ["sofr", "treasury", "prime"]},
+        "term_years": {"type": "integer", "minimum": 1},
+        "amortization_years": {"type": "integer", "minimum": 1},
+        "io_period_months": {"type": "integer", "minimum": 0, "description": "Interest-only period"}
+      }
+    },
+    "macro_context": {
+      "type": "object",
+      "description": "Current market conditions",
+      "properties": {
+        "sofr": {"type": "number", "description": "Current SOFR rate as decimal"},
+        "treasury_10yr": {"type": "number", "description": "10-year Treasury yield as decimal"},
+        "vacancy_trend": {"type": "string", "enum": ["rising", "stable", "declining"]},
+        "cap_rate_trend": {"type": "string", "enum": ["expanding", "stable", "compressing"]},
+        "volume_trend": {"type": "string", "enum": ["declining", "stable", "increasing"]},
+        "rate_environment": {"type": "string", "enum": ["rising", "stable", "declining"]},
+        "cmbs_delinquency": {"type": "number", "description": "Asset class CMBS delinquency rate"}
+      }
+    },
+    "sponsor": {
+      "type": "object",
+      "description": "Sponsor/borrower profile",
+      "properties": {
+        "name": {"type": "string"},
+        "aum": {"type": "number", "description": "Assets under management in USD"},
+        "track_record_years": {"type": "integer"},
+        "net_worth": {"type": "number"},
+        "liquidity": {"type": "number"},
+        "coinvest_pct": {"type": "number", "minimum": 0, "maximum": 1, "description": "GP co-invest as decimal"}
+      }
+    },
+    "notes": {
+      "type": "string",
+      "description": "Free-form notes, special circumstances, or additional context"
+    },
+    "sf": {"type": "integer", "minimum": 0, "description": "Square footage (integers only)"},
+    "units": {"type": "integer", "minimum": 0, "description": "Unit count (multifamily/hotel)"},
+    "year_built": {"type": "integer"},
+    "gross_revenue": {"type": "number", "minimum": 0},
+    "operating_expenses": {"type": "number", "minimum": 0},
+    "capex_reserves": {"type": "number", "minimum": 0},
+    "exit_cap": {"type": "number", "description": "Projected exit cap rate as decimal"},
+    "hold_period_years": {"type": "integer", "minimum": 1},
+    "noi_growth": {"type": "number", "description": "Annual NOI growth rate as decimal"},
+    "walt_years": {"type": "number", "description": "Weighted average lease term in years"},
     "senior_ltv": {"type": "number", "minimum": 0, "maximum": 1},
     "senior_rate": {"type": "number"},
     "mezz_ltv": {"type": "number", "minimum": 0, "maximum": 1},
     "mezz_rate": {"type": "number"},
     "equity_pct": {"type": "number", "minimum": 0, "maximum": 1},
-    "exit_cap": {"type": "number"},
-    "hold_period_years": {"type": "integer"},
-    "noi_growth": {"type": "number"},
-    "sponsor_aum": {"type": "number"},
-    "dscr_requirement": {"type": "number"},
-    "ltv_limit": {"type": "number"},
-    "debt_yield_min": {"type": "number"},
-    "amortization_years": {"type": "integer"},
-    "loan_term_years": {"type": "integer"},
-    "market_conditions": {
-      "type": "object",
-      "properties": {
-        "vacancy_trend": {"type": "string", "enum": ["rising", "stable", "declining"]},
-        "cap_rate_trend": {"type": "string", "enum": ["expanding", "stable", "compressing"]},
-        "volume_trend": {"type": "string", "enum": ["declining", "stable", "increasing"]},
-        "rate_environment": {"type": "string", "enum": ["rising", "stable", "declining"]}
-      }
-    }
+    "dscr_requirement": {"type": "number", "description": "Lender minimum DSCR"},
+    "ltv_limit": {"type": "number", "description": "Lender maximum LTV as decimal"},
+    "debt_yield_min": {"type": "number", "description": "Lender minimum debt yield as decimal"}
   }
 }

@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CreditCommittee Output",
+  "type": "object",
+  "required": ["skill", "decision", "confidence", "risk_flags", "rationale"],
+  "properties": {
+    "skill": {"type": "string", "const": "credit_committee"},
+    "deal_id": {"type": "string"},
+    "decision": {
+      "type": "string",
+      "enum": ["approve", "approve_with_conditions", "restructure", "decline", "watchlist", "distressed_opportunity"]
+    },
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "confidence_breakdown": {
+      "type": "object",
+      "properties": {
+        "data_completeness": {"type": "number", "minimum": 0, "maximum": 1},
+        "financial_strength": {"type": "number", "minimum": 0, "maximum": 1},
+        "market_position": {"type": "number", "minimum": 0, "maximum": 1},
+        "sponsor_quality": {"type": "number", "minimum": 0, "maximum": 1},
+        "structural_protections": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "analysis": {
+      "type": "object",
+      "properties": {
+        "max_loan": {"type": "number", "minimum": 0},
+        "recommended_loan": {"type": "number", "minimum": 0},
+        "binding_constraint": {"type": "string"},
+        "dscr": {"type": "number", "minimum": 0, "maximum": 5.0},
+        "ltv": {"type": "number", "minimum": 0, "maximum": 1.5},
+        "debt_yield": {"type": "number", "minimum": 0, "maximum": 0.30}
+      }
+    },
+    "risk_flags": {"type": "array", "items": {"type": "string"}, "maxItems": 5},
+    "conditions": {"type": "array", "items": {"type": "string"}},
+    "rationale": {"type": "string", "minLength": 50},
+    "dissenting_view": {"type": "string"},
+    "next_steps": {"type": "array", "items": {"type": "string"}}
+  }
+}

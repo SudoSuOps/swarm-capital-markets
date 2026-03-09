@@ -1,0 +1,71 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "WaterfallModel Output",
+  "type": "object",
+  "required": ["skill", "equity_invested", "waterfall_tiers", "return_metrics"],
+  "properties": {
+    "skill": {"type": "string", "const": "waterfall_model"},
+    "deal_id": {"type": "string"},
+    "equity_invested": {
+      "type": "object",
+      "required": ["total", "lp", "gp"],
+      "properties": {
+        "total": {"type": "number", "minimum": 0},
+        "lp": {"type": "number", "minimum": 0},
+        "gp": {"type": "number", "minimum": 0},
+        "gp_coinvest_pct": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "waterfall_tiers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["tier", "split_lp", "split_gp"],
+        "properties": {
+          "tier": {"type": "string", "enum": ["return_of_capital", "preferred_return", "catch_up", "tier_1", "tier_2", "tier_3"]},
+          "hurdle": {"type": "string"},
+          "split_lp": {"type": "number", "minimum": 0, "maximum": 1},
+          "split_gp": {"type": "number", "minimum": 0, "maximum": 1},
+          "distributions_lp": {"type": "number", "minimum": 0},
+          "distributions_gp": {"type": "number", "minimum": 0}
+        }
+      }
+    },
+    "total_distributions": {
+      "type": "object",
+      "properties": {
+        "lp": {"type": "number", "minimum": 0},
+        "gp_coinvest": {"type": "number", "minimum": 0},
+        "gp_promote": {"type": "number", "minimum": 0},
+        "gp_total": {"type": "number", "minimum": 0}
+      }
+    },
+    "return_metrics": {
+      "type": "object",
+      "properties": {
+        "project_irr": {"type": "number"},
+        "lp_irr": {"type": "number"},
+        "gp_irr": {"type": "number"},
+        "equity_multiple": {"type": "number", "minimum": 0},
+        "lp_multiple": {"type": "number", "minimum": 0},
+        "gp_multiple": {"type": "number", "minimum": 0}
+      }
+    },
+    "scenario_analysis": {
+      "type": "object",
+      "properties": {
+        "base": {"type": "object"},
+        "upside": {"type": "object"},
+        "downside": {"type": "object"}
+      }
+    },
+    "gp_economics": {
+      "type": "object",
+      "properties": {
+        "promote_dollars": {"type": "number", "minimum": 0},
+        "effective_ownership": {"type": "number", "minimum": 0, "maximum": 1},
+        "promote_as_pct_of_profit": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    }
+  }
+}

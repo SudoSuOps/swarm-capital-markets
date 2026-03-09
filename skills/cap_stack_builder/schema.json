@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CapStackBuilder Output",
+  "type": "object",
+  "required": ["skill", "total_capitalization", "layers", "blended_metrics"],
+  "properties": {
+    "skill": {"type": "string", "const": "cap_stack_builder"},
+    "deal_id": {"type": "string"},
+    "total_capitalization": {"type": "number", "minimum": 0},
+    "layers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["layer", "amount", "pct_of_stack", "cost", "priority"],
+        "properties": {
+          "layer": {"type": "string", "enum": ["senior", "mezzanine", "preferred_equity", "lp_equity", "gp_equity"]},
+          "amount": {"type": "number", "minimum": 0},
+          "pct_of_stack": {"type": "number", "minimum": 0, "maximum": 1},
+          "cost": {"type": "number", "minimum": 0, "maximum": 0.50},
+          "term": {"type": "string"},
+          "priority": {"type": "integer", "minimum": 1},
+          "annual_payment": {"type": "number", "minimum": 0},
+          "key_terms": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "blended_metrics": {
+      "type": "object",
+      "properties": {
+        "wacc": {"type": "number", "minimum": 0, "maximum": 0.30},
+        "total_leverage": {"type": "number", "minimum": 0, "maximum": 1},
+        "senior_ltv": {"type": "number", "minimum": 0, "maximum": 1},
+        "combined_ltv": {"type": "number", "minimum": 0, "maximum": 1},
+        "equity_requirement": {"type": "number", "minimum": 0},
+        "positive_leverage": {"type": "boolean"}
+      }
+    },
+    "return_preview": {
+      "type": "object",
+      "properties": {
+        "senior_yield": {"type": "number"},
+        "mezz_yield": {"type": "number"},
+        "pref_equity_yield": {"type": "number"},
+        "levered_irr_estimate": {"type": "number"},
+        "equity_multiple_estimate": {"type": "number"}
+      }
+    },
+    "recommendation": {"type": "string"},
+    "risk_flags": {"type": "array", "items": {"type": "string"}, "maxItems": 5}
+  }
+}

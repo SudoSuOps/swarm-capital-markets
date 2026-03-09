@@ -1,0 +1,79 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SwarmCapitalMarkets Metrics Output",
+  "description": "Deterministic financial metrics computed by the metrics engine (no LLM)",
+  "type": "object",
+  "properties": {
+    "cap_rate": {
+      "type": "number",
+      "description": "NOI / Purchase Price"
+    },
+    "dscr": {
+      "type": "number",
+      "description": "NOI / Annual Debt Service (2 decimal places)"
+    },
+    "ltv": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1.5,
+      "description": "Loan Amount / Purchase Price"
+    },
+    "debt_yield": {
+      "type": "number",
+      "description": "NOI / Loan Amount"
+    },
+    "loan_constant": {
+      "type": "number",
+      "description": "Annual Debt Service / Loan Amount"
+    },
+    "max_loan_dscr": {
+      "type": "number",
+      "description": "Maximum loan sized by DSCR constraint (rounded to $100K)"
+    },
+    "max_loan_ltv": {
+      "type": "number",
+      "description": "Maximum loan sized by LTV constraint (rounded to $100K)"
+    },
+    "max_loan_debt_yield": {
+      "type": "number",
+      "description": "Maximum loan sized by debt yield constraint (rounded to $100K)"
+    },
+    "max_loan": {
+      "type": "number",
+      "description": "MIN(max_loan_dscr, max_loan_ltv, max_loan_debt_yield)"
+    },
+    "binding_constraint": {
+      "type": "string",
+      "enum": ["ltv", "dscr", "debt_yield"],
+      "description": "Which constraint produces the smallest max loan"
+    },
+    "break_even_occupancy": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "(OpEx + Debt Service) / Gross Revenue"
+    },
+    "refinancing_gap": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Current Loan - Max New Loan (0 if no gap)"
+    },
+    "annual_debt_service": {
+      "type": "number",
+      "description": "Monthly payment * 12"
+    },
+    "monthly_payment": {
+      "type": "number",
+      "description": "Standard amortization: P * [r(1+r)^n] / [(1+r)^n - 1]"
+    },
+    "sensitivity_matrix": {
+      "type": "object",
+      "description": "5x5 DSCR stress test (NOI stress x Rate stress)",
+      "properties": {
+        "noi_stresses": {"type": "array", "items": {"type": "number"}},
+        "rate_stresses": {"type": "array", "items": {"type": "number"}},
+        "dscr_values": {"type": "array", "items": {"type": "array", "items": {"type": "number"}}}
+      }
+    }
+  }
+}

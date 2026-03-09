@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DistressAnalyzer Output",
+  "type": "object",
+  "required": ["skill", "distress_summary", "resolution_paths"],
+  "properties": {
+    "skill": {"type": "string", "const": "distress_analyzer"},
+    "deal_id": {"type": "string"},
+    "distress_summary": {
+      "type": "object",
+      "required": ["current_value", "loan_balance", "loss_severity"],
+      "properties": {
+        "asset_type": {"type": "string"},
+        "current_value": {"type": "number", "minimum": 0},
+        "original_basis": {"type": "number", "minimum": 0},
+        "loan_balance": {"type": "number", "minimum": 0},
+        "loss_severity": {"type": "number", "minimum": 0, "maximum": 1},
+        "distress_triggers": {"type": "array", "items": {"type": "string"}},
+        "months_in_distress": {"type": "integer", "minimum": 0}
+      }
+    },
+    "resolution_paths": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "probability", "recovery_rate"],
+        "properties": {
+          "path": {"type": "string", "enum": ["modification", "dpo", "foreclosure", "loan_sale", "rescue_capital", "loan_to_own"]},
+          "probability": {"type": "number", "minimum": 0, "maximum": 1},
+          "timeline_months": {"type": "integer", "minimum": 0},
+          "recovery_rate": {"type": "number", "minimum": 0, "maximum": 1.5},
+          "recovery_amount": {"type": "number", "minimum": 0},
+          "costs": {"type": "number", "minimum": 0},
+          "net_recovery": {"type": "number", "minimum": 0}
+        }
+      }
+    },
+    "pricing_analysis": {
+      "type": "object",
+      "properties": {
+        "fair_value_cents": {"type": "number", "minimum": 0, "maximum": 100},
+        "implied_yields": {
+          "type": "object",
+          "properties": {
+            "at_65": {"type": "number"},
+            "at_70": {"type": "number"},
+            "at_75": {"type": "number"},
+            "at_80": {"type": "number"}
+          }
+        }
+      }
+    },
+    "recommendation": {"type": "string"},
+    "risk_flags": {"type": "array", "items": {"type": "string"}, "maxItems": 5},
+    "timeline": {"type": "string"}
+  }
+}
