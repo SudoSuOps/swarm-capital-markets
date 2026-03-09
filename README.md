@@ -220,15 +220,16 @@ Raw Signal → AI Analysis → Quality Gate → Merkle Tree → HCS Timestamp
 All models run on sovereign hardware — no cloud, no outsourced compute.
 
 ```
-GPU Fleet (swarmrails):
+GPU Fleet (swarmrails) — Dual Blackwell:
 ────────────────────────────────────────────────
-GPU 0: RTX 3090 Ti (24GB)              SwarmCurator-9B    165 tok/s
+GPU 0: RTX PRO 4500 Blackwell (32GB)   SwarmCurator-9B    165 tok/s
 GPU 1: RTX PRO 6000 Blackwell (96GB)   SwarmCurator-27B    88 tok/s
+Total: 128GB VRAM, both SM120 Blackwell, CUDA 13.1
 
 Serving: vLLM 0.17.0 — continuous batching, native SM120 Blackwell kernels
 Throughput: ~1,740 pairs/hour combined (12.4x over previous llama-server)
 
-Training: bf16 LoRA on Blackwell (Unsloth + TRL)
+Training: QLoRA on dual Blackwell (Unsloth + TRL)
 Data: 1.16M+ verified pairs across CRE, medical, aviation verticals
 ```
 
@@ -243,6 +244,90 @@ The CRE debt maturity wall is a **data problem masquerading as a capital problem
 - Where is the basis trade between CMBS spreads and physical asset value?
 
 **Swarm Capital Markets answers these questions with purpose-built AI running on sovereign compute, sealed on a public ledger.** Not a chatbot. Not a dashboard. An intelligence infrastructure for the largest refinancing event in U.S. commercial real estate history.
+
+---
+
+## SwarmCapitalMarkets-27B Training Pipeline
+
+### The Cook
+
+8 specialized data streams + 3 augmentation layers, cooked via Together.ai API against frontier models (Qwen3-Next-80B-A3B + Qwen3-235B-A22B). This is not synthetic slop — every pair passes deterministic quality gates, schema validation, and financial content verification.
+
+```
+Stream                  Pairs    Task Types   Description
+──────────────────────  ─────    ──────────   ───────────────────────────────────────
+debt_maturity           6,073    12           Loan maturity, refi, extension, workout
+cmbs_distress           5,113    10           Special servicing, loss severity, tranches
+rate_advisory           5,666    10           Hedging, swaps, caps, rate lock strategy
+equity_advisory         5,187    10           JV structuring, promotes, GP/LP terms
+valuation_advisory      5,142    10           DCF, cap rate, comps, stress testing
+deal_origination        5,000    10           Sourcing, screening, LOI, due diligence
+macro_causality         2,400    12           Rate shocks, spreads, cycles, contagion
+deal_graph                500     9           Multi-deal portfolio reasoning (3-8 deals)
+──────────────────────  ─────    ──────────
+Subtotal               35,081    83 task types
+
++ Golden Pairs            327    Hand-crafted conceptual × 5 personas
++ RPA                 12,000    Multi-trajectory reasoning (235B model)
++ Mutations               194    Platinum variant mutations
+──────────────────────  ─────
+Target               ~47,600    research-grade CRE capital markets pairs
+```
+
+### Deal Graph Intelligence
+
+The deal_graph stream teaches **portfolio-level reasoning** — something no existing CRE model can do. Each scenario contains 3-8 interconnected deals with a macro overlay:
+
+- **Lender Exposure Graphs**: Bank holds $2.1B across 6 loans. Office DSCR drops below 1.0x. Model must trace contagion through the portfolio.
+- **Fund Portfolio Graphs**: GP manages 5-asset fund. Rate shock hits. Model must triage: which assets to sell, which to hold, where to deploy rescue capital.
+- **Market Comparable Graphs**: 4 industrial assets in same submarket. New supply delivers. Model must reason about relative pricing, absorption, and cap rate convergence.
+
+### Assembly Pipeline
+
+5-pool weighted blend → contrastive rebalance → eval holdout → audit:
+
+```
+Pool Allocation:
+  60%  Diversified    — 8 core streams, balanced by task type
+  25%  RPA            — Multi-trajectory reasoning from 235B model
+   8%  Macro + Graphs — Temporal evolution + portfolio reasoning
+   4%  Golden         — Conceptual knowledge, high entropy
+   3%  Mutations      — Platinum variant stress tests
+
+Quality Gates:
+  ✓ Financial content (numbers, rates, dollar amounts)
+  ✓ Schema validation (decision output against canonical schema)
+  ✓ Degenerate detection (40+ char repetition)
+  ✓ Start-phrase entropy < 4% (no structural monotony)
+  ✓ Contrastive difficulty rebalance (Bronze→Platinum)
+  ✓ 500-pair eval holdout (stratified by difficulty + task type)
+```
+
+### Training Plan
+
+```
+Model:      Qwen3.5-27B Dense
+Method:     QLoRA r=64, alpha=32, lr=2e-5, 2-3 epochs
+Hardware:   Dual Blackwell — 128GB VRAM (32GB + 96GB)
+Serving:    vLLM bf16, dual-GPU tensor parallel
+
+Curriculum Training (3 phases):
+  Phase 1:  Procedural — underwriting calcs, T-12 analysis, rent rolls
+  Phase 2:  Strategic — IC memos, advisory, market analysis
+  Phase 3:  Advanced — RPA multi-trajectory + macro causality + deal graphs
+```
+
+### Cook Scripts
+
+All scripts in `data/`:
+
+| Script | Purpose |
+|--------|---------|
+| `cre_capital_cook.py` | 8-stream factory — 70+ task types, Together.ai two-tier (GEN→PASS) |
+| `cook_rpa.py` | Reasoning Path Augmentation — 5 personas, 235B quality model |
+| `cook_golden_pairs.py` | 109 hand-crafted prompts × 3 persona variants |
+| `cook_platinum_mutations.py` | Hedge-fund grade mutation engine |
+| `assemble_final.py` | 5-pool blend + rebalance + eval holdout + audit |
 
 ---
 

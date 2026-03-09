@@ -64,8 +64,10 @@ STREAM_TARGETS = {
     "equity_advisory": 5_000,
     "valuation_advisory": 5_000,
     "deal_origination": 5_000,
+    "macro_causality": 2_400,
+    "deal_graph": 500,
 }
-TOTAL_TARGET = sum(STREAM_TARGETS.values())  # 30,000
+TOTAL_TARGET = sum(STREAM_TARGETS.values())  # 32,400
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # API
@@ -152,6 +154,143 @@ Blockchain/tokenization applicability (Hedera HTS, ERC-1400, stablecoins).
 Proceed / Restructure / Sell / Kill — with confidence score (0.0–1.0).
 Action items array: what to do next, in order of priority.
 """
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FORMAT DIVERSIFICATION — break structural monotony for training entropy
+# ═══════════════════════════════════════════════════════════════════════════════
+
+FORMAT_TEMPLATES = {
+    "trajectory_5step": {
+        "weight": 0.25,
+        "instructions": TRAJECTORY_INSTRUCTIONS,
+    },
+    "trajectory_3step": {
+        "weight": 0.10,
+        "instructions": """
+RESPONSE FORMAT — Use this 3-step framework:
+
+**ASSESS**: Property, market, loan structure, key financials. Show the math — every formula, every input.
+**ANALYZE**: Market conditions, lender landscape, comparable transactions, rate implications. What does a senior broker see?
+**DECIDE**: Proceed / Restructure / Sell / Kill with confidence (0.0–1.0) and prioritized action items.
+""",
+    },
+    "executive_brief": {
+        "weight": 0.12,
+        "instructions": """
+RESPONSE FORMAT — Executive brief style. Be direct and concise:
+
+Start with a one-line verdict (e.g., "RESTRUCTURE — DSCR below breakeven at current rates").
+Then provide: key metrics (3-5 bullet points with actual numbers), critical finding, recommended action, and confidence score.
+No section headers. No step numbering. Write like a senior MD sending a quick take to a client.
+""",
+    },
+    "narrative_memo": {
+        "weight": 0.12,
+        "instructions": """
+RESPONSE FORMAT — Write as a narrative capital markets memo. No numbered steps or bold headers.
+
+Open with the situation and thesis. Weave financial calculations naturally into prose paragraphs.
+Use specific numbers (DSCR, LTV, debt yield, basis points) throughout but in flowing text, not bullet lists.
+Close with a clear recommendation and confidence level. Think Wall Street research note, not template.
+""",
+    },
+    "tabular_analysis": {
+        "weight": 0.10,
+        "instructions": """
+RESPONSE FORMAT — Lead with tables and structured data:
+
+Use markdown tables for: scenario comparisons, lender quotes, capital stack tiers, sensitivity matrices.
+Follow each table with 1-2 sentences of interpretation. Minimize prose — let the numbers tell the story.
+End with: Verdict (one word), Confidence (0.0-1.0), Next Steps (3 bullets max).
+""",
+    },
+    "conversational": {
+        "weight": 0.10,
+        "instructions": """
+RESPONSE FORMAT — Respond as if speaking directly to a CRE broker in a meeting.
+
+Use natural, professional language. "Here's the deal..." or "The math tells us..." style.
+Include all the financial rigor (exact DSCR, LTV, debt service calculations) but deliver it
+conversationally. Anticipate follow-up questions. End with a clear recommendation.
+No markdown formatting, no bold headers, no numbered lists.
+""",
+    },
+    "json_intelligence_object": {
+        "weight": 0.12,
+        "instructions": """
+RESPONSE FORMAT — Return a JSON Intelligence Object. Structure it as valid JSON with these sections:
+
+{
+  "verdict": "PROCEED|RESTRUCTURE|SELL|KILL",
+  "confidence": 0.0-1.0,
+  "property": {summary object},
+  "financials": {all calculated metrics with formulas shown as strings},
+  "market_context": {relevant market data and comparables},
+  "risk_flags": [array of specific risks],
+  "action_items": [prioritized next steps],
+  "analysis_notes": "brief narrative connecting the numbers"
+}
+
+Every number must be calculated, not estimated. Include the formula used.
+""",
+    },
+    "risk_matrix": {
+        "weight": 0.09,
+        "instructions": """
+RESPONSE FORMAT — Risk-first analysis:
+
+Start with a risk matrix: list 5-7 specific risks, each with probability (LOW/MED/HIGH), impact (LOW/MED/HIGH), and mitigation.
+Then provide the financial underpinning: key calculations that quantify each risk.
+End with: overall risk score (1-10), go/no-go recommendation, and confidence (0.0-1.0).
+""",
+    },
+}
+
+# Build weighted selection list
+_FORMAT_CHOICES = []
+_FORMAT_WEIGHTS = []
+for fmt_name, fmt_cfg in FORMAT_TEMPLATES.items():
+    _FORMAT_CHOICES.append(fmt_name)
+    _FORMAT_WEIGHTS.append(fmt_cfg["weight"])
+
+
+START_PHRASE_VARIATIONS = [
+    "",  # No override — use format's natural opening (30% via weight below)
+    "\nIMPORTANT: Begin your response by naming the specific property and market before any analysis.",
+    "\nIMPORTANT: Open with the single most critical finding or risk, then build your analysis.",
+    "\nIMPORTANT: Start with the key financial metric that drives this decision (DSCR, LTV, debt yield, or cap rate).",
+    "\nIMPORTANT: Lead with your verdict and confidence score, then support with analysis.",
+    "\nIMPORTANT: Open with a one-sentence thesis statement about this deal, then elaborate.",
+    "\nIMPORTANT: Begin with the market context that matters most for this deal.",
+    "\nIMPORTANT: Start with the capital stack — who's in, at what cost, and where the gaps are.",
+    "\nIMPORTANT: Open with what makes this deal different from a standard transaction in this asset class.",
+    "\nIMPORTANT: Lead with the borrower's situation and how it shapes the analysis.",
+    "\nIMPORTANT: Start with the rate environment impact — how current SOFR/Treasury levels change the math.",
+    "\nIMPORTANT: Begin by comparing this deal to a recent comparable transaction.",
+    "\nIMPORTANT: Open with the downside scenario first — what happens if this deal breaks?",
+    "\nIMPORTANT: Start with the exit strategy — how does capital get returned and at what multiple?",
+    "\nIMPORTANT: Lead with the debt service math — show the payment at origination vs today's rates.",
+]
+
+# 30% chance of no override (natural format opening), 70% chance of varied start
+_START_WEIGHTS = [0.30] + [0.70 / (len(START_PHRASE_VARIATIONS) - 1)] * (len(START_PHRASE_VARIATIONS) - 1)
+
+
+def get_format_instructions(rng: random.Random) -> tuple[str, str]:
+    """Return (format_name, format_instructions) using weighted random selection.
+    Injects start-phrase variation to prevent structural fingerprinting."""
+    fmt_name = rng.choices(_FORMAT_CHOICES, weights=_FORMAT_WEIGHTS, k=1)[0]
+    instructions = FORMAT_TEMPLATES[fmt_name]["instructions"]
+    # Inject start-phrase variation
+    start_variation = rng.choices(START_PHRASE_VARIATIONS, weights=_START_WEIGHTS, k=1)[0]
+    if start_variation:
+        instructions = instructions.rstrip() + "\n" + start_variation
+    return fmt_name, instructions
+
+
+# Sentinel value — f-string system prompts embed this literal, replaced at runtime
+# by _get_system_prompt() with actual format instructions
+__FMT_PLACEHOLDER__ = "<<<FORMAT_INSTRUCTIONS>>>"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CAPITAL MARKETS CONTEXT — real rate/market data for 2026
@@ -351,7 +490,7 @@ Your analysis is consumed by AI agents and senior capital markets brokers. Be pr
 
 {BLOCKCHAIN_CONTEXT}
 
-{TRAJECTORY_INSTRUCTIONS}""",
+{__FMT_PLACEHOLDER__}""",
 
         f"""You are SwarmCapital — a senior capital markets intelligence engine for CRE. You operate at the intersection of debt origination, equity placement, and structured finance. Every DSCR, every debt yield, every basis point matters.
 
@@ -361,7 +500,7 @@ You understand the 2026 rate environment cold: SOFR at 4.25-4.50%, the maturity 
 
 {BLOCKCHAIN_CONTEXT}
 
-{TRAJECTORY_INSTRUCTIONS}""",
+{__FMT_PLACEHOLDER__}""",
 
         f"""You are SwarmCapital — an AI capital markets advisor built on 30 years of institutional CRE debt experience. You've closed $8B+ in transactions. You know every lender's box, every CMBS servicer's playbook, every debt fund's sweet spot.
 
@@ -371,7 +510,7 @@ When a broker asks you to size a loan, you don't guess — you calculate. When t
 
 {BLOCKCHAIN_CONTEXT}
 
-{TRAJECTORY_INSTRUCTIONS}""",
+{__FMT_PLACEHOLDER__}""",
 
         f"""You are SwarmCapital — the backend intelligence engine for CRE capital markets. Your output feeds broker desktops, mobile apps, and agent pipelines. You produce institutional-quality debt and equity analysis that drives real transactions.
 
@@ -381,7 +520,7 @@ You specialize in the crisis: the $1.5T debt maturity wall, DSCR compression, fo
 
 {BLOCKCHAIN_CONTEXT}
 
-{TRAJECTORY_INSTRUCTIONS}""",
+{__FMT_PLACEHOLDER__}""",
 
         f"""You are SwarmCapital — an AI-native capital markets platform for commercial real estate. On-device, voice-first, offline-capable. You bring institutional-grade debt sizing, rate analysis, and capital structure optimization to every broker's phone.
 
@@ -391,7 +530,7 @@ No cloud dependency. No subscription wall. Just pure capital markets intelligenc
 
 {BLOCKCHAIN_CONTEXT}
 
-{TRAJECTORY_INSTRUCTIONS}""",
+{__FMT_PLACEHOLDER__}""",
     ],
 
     "distressed_specialist": [
@@ -403,7 +542,7 @@ You model every workout option with NPV precision. You know when to extend-and-p
 
 {BLOCKCHAIN_CONTEXT}
 
-{TRAJECTORY_INSTRUCTIONS}""",
+{__FMT_PLACEHOLDER__}""",
 
         f"""You are SwarmCapital — specializing in CMBS distressed debt analysis. You track every watchlist loan, every special servicing transfer, every appraisal reduction. You calculate loss severity to the basis point.
 
@@ -413,7 +552,7 @@ Your edge: you see the patterns across thousands of distressed loans simultaneou
 
 {BLOCKCHAIN_CONTEXT}
 
-{TRAJECTORY_INSTRUCTIONS}""",
+{__FMT_PLACEHOLDER__}""",
 
         f"""You are SwarmCapital — an AI engine for distressed CRE loan analysis. You evaluate borrower creditworthiness, property fundamentals, and market conditions to determine optimal workout strategies.
 
@@ -423,7 +562,7 @@ Every modification gets an NPV analysis. Every A/B split gets modeled. Every DPO
 
 {BLOCKCHAIN_CONTEXT}
 
-{TRAJECTORY_INSTRUCTIONS}""",
+{__FMT_PLACEHOLDER__}""",
 
         f"""You are SwarmCapital — a special servicing intelligence platform. You process CMBS loan data, track delinquency trends, and model loss severity across the entire CRE universe.
 
@@ -433,7 +572,7 @@ The 2026 maturity wall is your moment: office CMBS delinquency at 8.5% and climb
 
 {BLOCKCHAIN_CONTEXT}
 
-{TRAJECTORY_INSTRUCTIONS}""",
+{__FMT_PLACEHOLDER__}""",
 
         f"""You are SwarmCapital — built for the distressed cycle. You analyze loan workouts with the precision of a restructuring advisor and the speed of an AI. NPV every option, model every scenario, recommend the optimal path.
 
@@ -443,7 +582,7 @@ You understand both sides: the borrower fighting to hold on, and the lender deci
 
 {BLOCKCHAIN_CONTEXT}
 
-{TRAJECTORY_INSTRUCTIONS}""",
+{__FMT_PLACEHOLDER__}""",
     ],
 
     "investment_banker": [
@@ -455,7 +594,7 @@ GP/LP splits, 8% preferred returns, catch-up provisions, clawback mechanisms —
 
 {BLOCKCHAIN_CONTEXT}
 
-{TRAJECTORY_INSTRUCTIONS}""",
+{__FMT_PLACEHOLDER__}""",
 
         f"""You are SwarmCapital — an AI-powered CRE equity advisory platform. You structure joint ventures, model fund economics, and calculate investor returns across complex waterfall structures.
 
@@ -465,7 +604,7 @@ Your analysis goes to institutional LPs, family offices, and UHNW investors. Eve
 
 {BLOCKCHAIN_CONTEXT}
 
-{TRAJECTORY_INSTRUCTIONS}""",
+{__FMT_PLACEHOLDER__}""",
 
         f"""You are SwarmCapital — specializing in CRE fund formation and investor relations. You model management fees, promote carry, hurdle rates, catch-up provisions, and GP co-invest economics.
 
@@ -475,7 +614,7 @@ You prepare LP investor memos that institutional allocators actually read: clear
 
 {BLOCKCHAIN_CONTEXT}
 
-{TRAJECTORY_INSTRUCTIONS}""",
+{__FMT_PLACEHOLDER__}""",
 
         f"""You are SwarmCapital — a CRE equity structuring engine. You evaluate preferred equity vs mezz debt vs JV equity. You calculate blended cost of capital across complex capital stacks. You model waterfall distributions at every exit scenario.
 
@@ -485,7 +624,7 @@ When a deal needs rescue capital, you find the structure that works for both sid
 
 {BLOCKCHAIN_CONTEXT}
 
-{TRAJECTORY_INSTRUCTIONS}""",
+{__FMT_PLACEHOLDER__}""",
 
         f"""You are SwarmCapital — an AI platform for CRE capital raising. You match capital sources to deal opportunities. You know which LPs want value-add multifamily, which want distressed office, which want industrial.
 
@@ -495,7 +634,7 @@ You structure offerings that raise capital efficiently: right terms, right minim
 
 {BLOCKCHAIN_CONTEXT}
 
-{TRAJECTORY_INSTRUCTIONS}""",
+{__FMT_PLACEHOLDER__}""",
     ],
 
     "deal_originator": [
@@ -507,7 +646,7 @@ You think like a 30-year capital markets broker: every market signal is a potent
 
 {BLOCKCHAIN_CONTEXT}
 
-{TRAJECTORY_INSTRUCTIONS}""",
+{__FMT_PLACEHOLDER__}""",
 
         f"""You are SwarmCapital — an AI-powered deal origination platform. You process thousands of market signals simultaneously to identify CRE opportunities before they hit the market.
 
@@ -517,7 +656,7 @@ SEC filings, county records, loan maturities, lease expirations — you connect 
 
 {BLOCKCHAIN_CONTEXT}
 
-{TRAJECTORY_INSTRUCTIONS}""",
+{__FMT_PLACEHOLDER__}""",
 
         f"""You are SwarmCapital — the deal origination brain for CRE brokers. You don't just find deals — you manufacture them. You identify the signal, qualify the opportunity, prepare the analysis, and draft the outreach.
 
@@ -527,7 +666,7 @@ A broker using SwarmCapital makes 10x the dials with 10x the intelligence behind
 
 {BLOCKCHAIN_CONTEXT}
 
-{TRAJECTORY_INSTRUCTIONS}""",
+{__FMT_PLACEHOLDER__}""",
 
         f"""You are SwarmCapital — specializing in CRE listing acquisition and buyer matching. You prepare listing proposals with real comp analysis, pricing strategies based on market data, and marketing plans that win mandates.
 
@@ -537,7 +676,7 @@ You know the buyer pool: which investors are active, what they're buying, their 
 
 {BLOCKCHAIN_CONTEXT}
 
-{TRAJECTORY_INSTRUCTIONS}""",
+{__FMT_PLACEHOLDER__}""",
 
         f"""You are SwarmCapital — a CRE transaction management engine. From origination through closing, you coordinate every step: due diligence checklists, financing contingencies, title/escrow, prorations, and post-closing obligations.
 
@@ -547,7 +686,7 @@ You've closed thousands of deals. You know what kills transactions and how to pr
 
 {BLOCKCHAIN_CONTEXT}
 
-{TRAJECTORY_INSTRUCTIONS}""",
+{__FMT_PLACEHOLDER__}""",
     ],
 }
 
@@ -674,6 +813,14 @@ VALUATION_ADVISORY_TASKS = [
      "p": "Highest and best use analysis: evaluate current use vs potential conversions (office → residential, retail → industrial, hotel → multifamily). For each option: zoning compatibility, conversion cost estimate, stabilized NOI post-conversion, value post-conversion, construction timeline, market demand for converted use. Which use maximizes value?"},
     {"task_type": "structured_output", "d": "medium",
      "p": "Return a JSON Intelligence Object: {property_summary, income_value: {noi, cap_rate, value}, dcf_value: {discount_rate, terminal_cap, npv, irr}, sales_comp_value: {comps_count, adjusted_range, reconciled}, cost_value: {replacement_cost, depreciation, indicated}, reconciled_value, methodology_weights: {income, dcf, sales, cost}, confidence}"},
+    {"task_type": "portfolio_stress_test", "d": "high",
+     "p": "Portfolio-level stress test: A fund holds 8-15 assets across multiple markets. Total portfolio debt $200-600M. Model portfolio refinancing risk under 3 scenarios: (1) rates +100bp, (2) rates +150bp, (3) rates +200bp with 10% NOI decline. For each scenario calculate: number of assets with DSCR below 1.0x, total equity gap across portfolio, which assets breach LTV covenants, portfolio-level weighted DSCR. Identify the 3 most vulnerable assets and recommend triage priority."},
+    {"task_type": "portfolio_diversification", "d": "high",
+     "p": "Portfolio diversification analysis: Evaluate concentration risk across asset type, geography, tenant, lease expiration, and debt maturity dimensions. Calculate Herfindahl-Hirschman Index for each dimension. Identify the single largest concentration risk. Model the impact of selling the most concentrated position and redeploying into underweight sectors. Show before/after portfolio metrics: weighted cap rate, DSCR, LTV, NOI exposure by asset type. Recommend optimal rebalancing trades."},
+    {"task_type": "portfolio_acquisition", "d": "platinum",
+     "p": "Portfolio acquisition strategy: A multi-asset portfolio is available at a reported $300-800M with a blended cap rate. Analyze: cherry-pick vs bulk acquisition economics, portfolio premium/discount analysis (sum-of-parts vs bulk price), financing strategy (portfolio-level CMBS vs individual asset loans), asset-level underwriting for the 3 weakest assets in the portfolio, disposition plan for non-core assets post-acquisition, hold/sell/reposition matrix by asset, total return modeling at portfolio level (IRR, equity multiple, cash-on-cash by year). Show the math on whether the portfolio discount justifies taking the weaker assets."},
+    {"task_type": "portfolio_refi_cascade", "d": "platinum",
+     "p": "Portfolio refinancing cascade: A fund has 10-20 assets with staggered debt maturities over 2025-2028. 30-40% of total debt matures within 12 months. Model the refinancing cascade: Which assets refinance first (priority scoring by gap size, lender flexibility, asset quality)? If 2-3 assets cannot refinance, what is the contagion risk to the portfolio (cross-collateralization, cross-default provisions, fund-level credit facility triggers)? Calculate the total rescue capital required under base and stress scenarios. Draft a lender-by-lender workout strategy with timeline."},
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -697,7 +844,483 @@ DEAL_ORIGINATION_TASKS = [
      "p": "Closing timeline and coordination plan: Day 1-30 due diligence period (checklist with responsible parties), Day 30-45 financing contingency (lender selection, application, appraisal), Day 45-60 title/escrow (title commitment review, survey, objections), Day 55-60 closing (prorations, closing statement, wire instructions, post-closing deliverables). Flag common deal-killers at each stage."},
     {"task_type": "structured_output", "d": "medium",
      "p": "Return a JSON Intelligence Object: {signal_source, property_summary, deal_opportunity: {probability, estimated_value, seller_motivation}, recommended_action, buyer_profile: {type, return_target, size_range}, pricing: {list_price, expected_price, cap_rate, per_unit}, timeline: {dd_days, financing_days, closing_target}, confidence}"},
+    {"task_type": "distress_signal_detection", "d": "high",
+     "p": "Detect distressed opportunity signals: Analyze this market/submarket for distress indicators — CMBS watchlist additions, special servicing transfers, loan maturity defaults, occupancy drops below 70%, rent concession increases, landlord contribution spikes. Cross-reference with ownership entity financials (public filings, UCC filings, lis pendens). Score each signal by urgency (1-10) and deal probability (0-1). Identify the top 3 actionable distressed opportunities with estimated basis discount vs stabilized value."},
+    {"task_type": "refi_risk_detection", "d": "high",
+     "p": "Identify refinancing risk across a market: Scan for properties with loans originated in 2019-2022 at rates below 4% that mature in the next 12-24 months. Calculate the DSCR compression for each when refinancing at current rates (SOFR + 200-350bp spread). Flag assets where DSCR drops below 1.10x — these are forced sellers or capital call candidates. Rank by equity gap size. What percentage of the market's outstanding debt faces negative leverage at current rates?"},
+    {"task_type": "lender_pullback_analysis", "d": "high",
+     "p": "Predict lender pullback impact: Analyze current lending conditions — bank CRE exposure limits (regulatory pressure), CMBS issuance volume trends, life company appetite by asset class, debt fund dry powder. Which property types and size ranges face the widest lending gap? Where are alternative lenders (bridge, debt funds, agency) stepping in and at what spread premium? Model a scenario where regional bank CRE lending contracts 20% — which markets and asset types get hit hardest? Where does the capital vacuum create opportunity?"},
+    {"task_type": "capital_dislocation_scan", "d": "platinum",
+     "p": "Spot capital dislocation opportunities: Identify markets where public REIT pricing implies cap rates 100-200bp above private market transaction cap rates (public-private arbitrage). Cross-reference with: (1) forced seller signals (fund redemption queues, open-end fund NAV markdowns), (2) market-level transaction volume collapse (>40% YoY decline = price discovery void), (3) credit spread widening in CMBS tranches (BBB- spreads >500bp over swaps). Score each dislocation by magnitude, duration expectation, and capital required to exploit. Build a trade thesis for the top opportunity."},
 ]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STREAM 7: MACRO CAUSALITY — temporal evolution + distressed reasoning
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# 4 macro environments — same deal evaluated across time
+MACRO_ENVIRONMENTS = {
+    "2019_easy_money": {
+        "year": 2019, "label": "Easy Money Era (2019)",
+        "sofr": 1.75, "treasury_10yr": 1.80,
+        "office_vacancy": 12.0, "multifamily_vacancy": 5.2,
+        "industrial_vacancy": 4.8, "retail_vacancy": 9.5,
+        "cmbs_delinquency_office": 2.1, "cmbs_delinquency_all": 1.8,
+        "credit_spreads": "tight", "lender_appetite": "aggressive",
+        "max_ltv": 0.75, "min_dscr": 1.20, "typical_spread_bps": 175,
+        "narrative": "Low rates, abundant liquidity, aggressive lender competition. Banks and CMBS competing on proceeds. IO available on stabilized assets. Cap rates compressing.",
+    },
+    "2023_rate_shock": {
+        "year": 2023, "label": "Rate Shock (2023)",
+        "sofr": 5.33, "treasury_10yr": 4.60,
+        "office_vacancy": 18.5, "multifamily_vacancy": 6.8,
+        "industrial_vacancy": 4.2, "retail_vacancy": 10.8,
+        "cmbs_delinquency_office": 6.4, "cmbs_delinquency_all": 4.2,
+        "credit_spreads": "widening", "lender_appetite": "selective",
+        "max_ltv": 0.60, "min_dscr": 1.30, "typical_spread_bps": 275,
+        "narrative": "Fed tightening cycle peaked. Transaction volume collapsed 50%+. Banks pulling back, CMBS nearly frozen. Price discovery void across office and retail. Negative leverage on new acquisitions.",
+    },
+    "2026_maturity_crisis": {
+        "year": 2026, "label": "Maturity Crisis (2026)",
+        "sofr": 4.35, "treasury_10yr": 4.20,
+        "office_vacancy": 22.0, "multifamily_vacancy": 7.5,
+        "industrial_vacancy": 5.0, "retail_vacancy": 11.2,
+        "cmbs_delinquency_office": 11.2, "cmbs_delinquency_all": 6.8,
+        "credit_spreads": "wide", "lender_appetite": "cautious",
+        "max_ltv": 0.55, "min_dscr": 1.35, "typical_spread_bps": 300,
+        "narrative": "Peak of $1.5T maturity wall. Loans originated at 3-4% refinancing at 6.5-7.5%. DSCR compression forcing equity infusions or defaults. Office special servicing at record levels. Distressed sellers emerging.",
+    },
+    "2028_recovery": {
+        "year": 2028, "label": "Early Recovery (2028)",
+        "sofr": 3.25, "treasury_10yr": 3.50,
+        "office_vacancy": 19.0, "multifamily_vacancy": 5.8,
+        "industrial_vacancy": 3.5, "retail_vacancy": 9.0,
+        "cmbs_delinquency_office": 8.5, "cmbs_delinquency_all": 4.5,
+        "credit_spreads": "normalizing", "lender_appetite": "returning",
+        "max_ltv": 0.65, "min_dscr": 1.25, "typical_spread_bps": 225,
+        "narrative": "Fed easing cycle underway. Distressed assets being recapitalized. Transaction volume recovering. Banks cautiously re-entering. Office bifurcation — trophy assets recovering, commodity struggling.",
+    },
+}
+
+MACRO_CAUSALITY_TASKS = [
+    {"task_type": "temporal_refi_evolution", "d": "platinum",
+     "p": """Temporal deal analysis — evaluate this SAME property across the macro environment provided.
+
+Your analysis MUST follow this causal chain:
+
+1. MACRO ENVIRONMENT → How do current rates, credit spreads, and lender appetite shape the capital markets landscape?
+2. CAPITAL MARKETS RESPONSE → How are lenders pricing risk? What LTV/DSCR thresholds are they enforcing? Which lending channels are open vs closed?
+3. LOAN STRUCTURE IMPACT → Given the original loan terms, calculate the refinancing gap (if any). Show debt service at original rate vs current rate. Calculate DSCR at both rates.
+4. PROPERTY PERFORMANCE → How does the macro environment affect this property type's fundamentals? NOI trajectory, vacancy trend, cap rate movement.
+5. DISTRESS DIAGNOSIS → Is this loan performing, watchlisted, or in default? What type of distress (maturity, cash flow, covenant, value)?
+6. RECOVERY OPTIONS → Rank all options: refinance, extension, modification, DPO, note sale, foreclosure, recapitalization. Show the math on each viable path.
+7. INVESTMENT DECISION → From an institutional investor perspective: proceed, restructure, sell, or acquire distressed? Expected IRR, confidence score (0-1), key risks."""},
+
+    {"task_type": "macro_causal_chain", "d": "platinum",
+     "p": """Macro-to-deal causal analysis. Follow this EXACT reasoning chain — do NOT skip steps:
+
+MACRO → CREDIT MARKETS → DEAL MATH → DECISION
+
+Step 1: Macro analysis — what do current SOFR, Treasury, vacancy, and delinquency rates tell us about the lending environment?
+Step 2: Credit markets response — how are banks, CMBS, life companies, and debt funds responding? What spreads are they quoting? What structures are available?
+Step 3: Deal math — apply the macro environment to this specific deal. Calculate: debt service at original vs refinancing rate, DSCR compression, LTV at current value, debt yield, equity gap. Show every formula.
+Step 4: Decision — given the causal chain above, what is the optimal capital markets strategy? Size the solution. Confidence score (0-1)."""},
+
+    {"task_type": "counterfactual_scenario", "d": "platinum",
+     "p": """Counterfactual analysis — answer BOTH scenarios for this property:
+
+SCENARIO A (Base): Use the macro environment provided. Calculate DSCR, LTV, refinancing feasibility, and recommended action.
+
+SCENARIO B (Counterfactual): If SOFR were 200bp lower than the provided environment, recalculate everything. Would the deal refinance? What changes in the capital stack?
+
+Compare the two scenarios side-by-side. Quantify the exact impact of the 200bp rate difference on: debt service, DSCR, maximum loan proceeds, equity gap, and investment decision. Show how macro conditions drive deal outcomes through the causal chain."""},
+
+    {"task_type": "distress_7stage", "d": "platinum",
+     "p": """You are a distressed credit analyst at a real estate hedge fund. Evaluate this CRE loan and determine the optimal strategy.
+
+Your analysis MUST follow these 7 stages:
+
+1. MARKET CONTEXT — How do macro conditions (rates, spreads, sector trends) affect restructuring prospects?
+2. LOAN STRUCTURE — Summarize terms (balance, rate, maturity, LTV, DSCR, lender type, covenants). Identify structural weaknesses.
+3. PROPERTY PERFORMANCE — Evaluate NOI trend, occupancy, lease rollover, cap rate assumptions, market comparables.
+4. DISTRESS DIAGNOSIS — Classify: maturity default, cash flow default, covenant breach, or value impairment. What caused it?
+5. RECOVERY OPTIONS — Analyze each: refinance, extension, modification, DPO, note sale, foreclosure, recapitalization. Rank by probability and timeline.
+6. CAPITAL STRUCTURE STRATEGY — From an opportunistic investor: where is value in the capital stack? Equity injection math? Loan-to-own opportunity? IRR potential?
+7. FINAL DECISION — Strategy, expected recovery rate, key risks, confidence (0-1). Show the math that supports the decision."""},
+
+    {"task_type": "lender_vs_borrower", "d": "high",
+     "p": """Dual-perspective analysis — evaluate this deal from BOTH sides:
+
+LENDER PERSPECTIVE: You are the lender/special servicer. What are your options? Extend and pretend, modify, or foreclose? What recovery do you expect? What are the costs of each path? How does the macro environment affect your timeline and leverage?
+
+BORROWER PERSPECTIVE: You are the sponsor/borrower. What leverage do you have in negotiations? What can you offer (additional equity, principal paydown, rate adjustment)? When does it make sense to hand back the keys vs fight for the asset?
+
+Then analyze: Where is the negotiation equilibrium? What deal structure makes both parties better off than their BATNA? Show the math on the compromise solution."""},
+
+    {"task_type": "contagion_analysis", "d": "high",
+     "p": """Cross-market contagion analysis: Given the macro environment, analyze how distress in one asset class or market spreads to others.
+
+Start with the property provided, then extend: (1) If this property defaults, what happens to comparable properties in the same submarket (comp effect on appraisals, vacancy absorption)? (2) If the lender takes a loss, how does that affect their willingness to lend in this market/asset class? (3) How do rising delinquencies in this sector affect CMBS pricing and new issuance? (4) What second-order effects reach other asset classes?
+
+Quantify the contagion chain with specific numbers. Identify the circuit breakers — what stops the contagion?"""},
+
+    # ── CROSS-STREAM BLENDING — multi-domain reasoning ──
+
+    {"task_type": "cross_distress_refi_equity", "d": "platinum",
+     "p": """CROSS-DOMAIN ANALYSIS — This deal requires simultaneous reasoning across distress, refinancing, and equity recapitalization.
+
+Given the property and macro environment:
+
+1. DISTRESS ANALYSIS: Classify the distress type. Is this a maturity default, cash flow default, or value impairment? What is the loan-to-value at current market? What would a special servicer do?
+
+2. REFINANCING FEASIBILITY: Can this asset refinance in the current rate environment? Calculate DSCR at today's rates. What is the maximum new loan amount? What is the gap?
+
+3. EQUITY RECAPITALIZATION: If refinancing falls short, structure the rescue capital. Preferred equity vs mezz debt vs JV equity recapitalization. Terms, pricing, dilution impact on existing equity. Who provides the capital and at what return?
+
+4. INTEGRATED DECISION: Combining all three analyses — what is the optimal capital markets strategy? Show how distress severity drives the refinancing gap which drives the equity solution. Return a structured decision with confidence score (0-1).
+
+This is a multi-domain problem. Do NOT analyze each domain in isolation — show how they connect."""},
+
+    {"task_type": "cross_portfolio_macro_distress", "d": "platinum",
+     "p": """CROSS-DOMAIN ANALYSIS — Portfolio-level distress under macro stress.
+
+You are evaluating a portfolio that includes this property plus 7-12 similar assets across 3-4 markets. Total portfolio debt $250-500M.
+
+Analyze across all three domains simultaneously:
+
+1. MACRO IMPACT: How does the current macro environment (rates, spreads, lender appetite) affect each asset class in the portfolio differently?
+
+2. PORTFOLIO DISTRESS MAP: Which assets in the portfolio are performing, watchlisted, or defaulting? Create a traffic-light classification. What percentage of portfolio NOI is at risk?
+
+3. CONTAGION + REFINANCING CASCADE: If the weakest 2-3 assets default, what happens to the fund's credit facility? Cross-default provisions? Does the portfolio-level leverage covenant breach? Model the cascading refinancing timeline.
+
+4. CAPITAL STRATEGY: Optimal triage — which assets to save (inject equity), which to extend (negotiate with lender), which to surrender (deed-in-lieu or foreclosure). Show the portfolio-level IRR under each scenario.
+
+5. INVESTMENT COMMITTEE RECOMMENDATION: Present a final recommendation with confidence score (0-1), expected portfolio recovery rate, and timeline."""},
+
+    {"task_type": "cross_signal_valuation_origination", "d": "high",
+     "p": """CROSS-DOMAIN ANALYSIS — Signal detection → Valuation → Deal origination pipeline.
+
+Given this property and macro environment:
+
+1. SIGNAL DETECTION: What market signals indicate this property may be a distressed opportunity? Analyze: maturity date, ownership entity financial health, occupancy trend, rent concessions, CMBS watchlist status, comparable defaults in submarket. Score urgency (1-10).
+
+2. DISTRESSED VALUATION: Calculate As-Is value (current distressed state), Stabilized value (post-turnaround), and Cost-to-Stabilize. What discount-to-replacement-cost does the distressed basis represent?
+
+3. DEAL ORIGINATION: How would you approach this opportunity? Draft the outreach strategy, identify the optimal buyer profile (distressed fund, value-add operator, loan-to-own), and model the acquisition economics (entry cap rate, target exit cap rate, total return).
+
+4. INVESTMENT DECISION: Combine signal strength + valuation spread + execution risk into a single go/no-go recommendation with confidence (0-1) and expected IRR."""},
+
+    {"task_type": "cross_rate_equity_waterfall", "d": "high",
+     "p": """CROSS-DOMAIN ANALYSIS — Rate environment → Equity structure → Waterfall economics.
+
+Given this property and macro environment:
+
+1. RATE IMPACT: How do current rates affect this deal's debt service, DSCR, and maximum leverage? Compare fixed vs floating options. Calculate the carry cost difference over a 5-year hold.
+
+2. EQUITY STRUCTURE: Given the debt constraints from the rate analysis, structure the equity. GP co-invest (5-15%), LP equity, preferred return, promote waterfall. How much total equity is needed? What LP return is achievable given the rate environment?
+
+3. WATERFALL MODELING: Calculate full promote waterfall at three scenarios — base case, rates +100bp stress, rates -100bp tailwind. Show GP and LP distributions, IRR, and equity multiple for each. How sensitive is the GP promote to rate movements?
+
+4. DEAL VIABILITY: Does this deal work in the current rate environment? What rate level makes it uneconomic? What rate level makes it a home run? Show the breakeven analysis."""},
+
+    # ── CONFIDENCE CALIBRATION — teach the model to estimate certainty ──
+
+    {"task_type": "confidence_calibration", "d": "high",
+     "p": """CALIBRATED DECISION OUTPUT — Evaluate this deal and return a structured decision with explicit confidence scoring.
+
+Your confidence score (0.00-1.00) must reflect genuine uncertainty. Calibrate it using these anchors:
+
+- 0.90-1.00: Near-certain. Math is unambiguous, market data is clear, limited downside scenarios.
+- 0.75-0.89: High confidence. Strong thesis with quantitative support, 1-2 manageable risks.
+- 0.60-0.74: Moderate confidence. Thesis holds but key assumptions are uncertain (cap rate direction, lease-up timeline, lender appetite).
+- 0.40-0.59: Low confidence. Significant uncertainties that could flip the decision. Multiple scenarios with different outcomes.
+- 0.00-0.39: Very low confidence. Insufficient data, extreme market uncertainty, or contradictory signals.
+
+For this deal, provide:
+1. Decision: approve / approve_with_conditions / restructure / decline / watchlist / distressed_opportunity
+2. Confidence: 0.00-1.00 with explicit justification for the score
+3. Key assumptions that would change the confidence by +/-0.10 if wrong
+4. The single factor that creates the most uncertainty
+5. What additional data would increase your confidence above 0.85?
+
+Return as structured JSON with all financial calculations shown."""},
+
+    {"task_type": "confidence_sensitivity", "d": "platinum",
+     "p": """CONFIDENCE SENSITIVITY MATRIX — Analyze how confidence changes across scenarios.
+
+Evaluate this deal under 4 scenarios and show how your decision confidence shifts:
+
+SCENARIO 1 (Base): Current macro environment as provided.
+SCENARIO 2 (Stress): SOFR +100bp, vacancy +5%, cap rates +50bp.
+SCENARIO 3 (Downside): SOFR +200bp, vacancy +10%, cap rates +100bp, NOI -15%.
+SCENARIO 4 (Upside): SOFR -150bp, vacancy -3%, cap rates -25bp.
+
+For each scenario provide:
+- Decision (approve/restructure/decline/etc.)
+- Confidence score (0.00-1.00)
+- DSCR, LTV, debt yield
+- Key risk that drives the confidence score
+
+Then create a sensitivity matrix showing: at what exact SOFR level does the decision flip from approve to restructure? At what vacancy level? At what cap rate? Show the decision boundaries with specific numbers.
+
+This calibrates the model's confidence to quantitative thresholds, not vibes."""},
+]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STREAM 8: DEAL GRAPH INTELLIGENCE — multi-deal portfolio reasoning
+# ═══════════════════════════════════════════════════════════════════════════════
+
+DEAL_GRAPH_TASKS = [
+    # ── Lender Exposure Graphs ──
+    {"task_type": "lender_exposure_cascade", "d": "platinum", "graph_type": "lender",
+     "p": """LENDER PORTFOLIO STRESS TEST — you are the Chief Credit Officer at a regional bank with the CRE loan portfolio described below.
+
+Analyze the ENTIRE portfolio as a system. Your analysis MUST cover:
+
+1. PORTFOLIO EXPOSURE: Total CRE exposure, concentration by asset type, geographic concentration, maturity distribution. Calculate HHI for asset type concentration.
+2. STRESS CASCADE: Apply the macro environment to EACH loan simultaneously. Which loans breach DSCR covenants first? Which hit LTV triggers? Show the cascade sequence — which default triggers cross-default provisions?
+3. LOSS SEVERITY RANKING: Rank all loans by expected loss severity. Calculate loss-given-default for each assuming current market values. What is the total portfolio loss under stress?
+4. REFINANCING WALL: Which loans mature within 18 months? Can they refinance at today's rates? Calculate the refinancing gap for each. What is the total capital shortfall?
+5. CAPITAL ALLOCATION: Where should the bank deploy its limited workout resources? Prioritize by: (a) loss avoidance potential, (b) relationship value, (c) collateral quality. Recommend: extend, modify, sell, or foreclose for each loan.
+6. REGULATORY IMPACT: How does portfolio stress affect risk-weighted assets, provision requirements, and capital ratios? What triggers regulatory intervention?
+
+Provide specific numbers for every loan. This is a credit committee presentation."""},
+
+    {"task_type": "lender_contagion_analysis", "d": "platinum", "graph_type": "lender",
+     "p": """CROSS-DEFAULT CONTAGION — analyze how distress in one loan in this portfolio cascades to others.
+
+For this lender portfolio:
+1. Identify the WEAKEST loan (lowest DSCR, highest LTV, nearest maturity)
+2. Model the contagion: if this loan defaults, how does it affect (a) the bank's willingness to extend other loans, (b) mark-to-market on similar collateral, (c) provisioning requirements that reduce lending capacity
+3. Map the domino sequence — which loan fails second? Third?
+4. Calculate total portfolio loss under the cascade scenario vs isolated default
+5. Identify the CIRCUIT BREAKER — what action on the first loan prevents cascade?
+6. Recommend portfolio-level strategy: triage, workout sequencing, capital preservation
+
+Show all calculations. Confidence score (0-1) on cascade probability."""},
+
+    {"task_type": "lender_concentration_risk", "d": "high", "graph_type": "lender",
+     "p": """CONCENTRATION RISK ANALYSIS — evaluate this bank's CRE portfolio for dangerous concentrations.
+
+Analyze:
+1. Asset type concentration (HHI index, % in each category)
+2. Geographic concentration (single-market exposure risk)
+3. Maturity concentration (% maturing within 12/24/36 months)
+4. Borrower concentration (if applicable)
+5. Rate type concentration (fixed vs floating exposure)
+6. LTV distribution — what % of portfolio is >70% LTV? >80%?
+
+For each concentration risk, quantify the impact of a stress scenario. What portfolio adjustment would reduce risk? Size the trades needed.
+
+Present as a risk committee memo with specific numbers."""},
+
+    # ── Fund Portfolio Graphs ──
+    {"task_type": "portfolio_capital_allocation", "d": "platinum", "graph_type": "portfolio",
+     "p": """CAPITAL ALLOCATION STRATEGY — you manage this CRE fund portfolio. Given the macro environment, determine optimal capital allocation.
+
+Your analysis MUST address:
+1. PORTFOLIO PERFORMANCE: Calculate current yield, DSCR, LTV, and debt yield for EACH asset. Rank by risk-adjusted return.
+2. HOLD vs SELL: For each asset, model (a) hold scenario with current cash flows, (b) disposition at today's cap rate. Which assets should be sold? What is the NAV impact?
+3. REBALANCING: Given macro conditions, what is the optimal asset mix? What trades would you execute? Size each trade and model the transaction costs.
+4. DRY POWDER DEPLOYMENT: If you have capital to deploy, which asset class and market offers the best risk-adjusted entry point? Show the underwriting for a target acquisition.
+5. LP COMMUNICATION: Draft the key messages for the quarterly LP letter explaining portfolio strategy shifts.
+
+Provide IRR projections for the rebalanced portfolio vs status quo. Confidence score (0-1)."""},
+
+    {"task_type": "portfolio_distress_triage", "d": "platinum", "graph_type": "portfolio",
+     "p": """DISTRESS TRIAGE — multiple assets in this portfolio are under stress simultaneously. You are the asset manager presenting to the investment committee.
+
+For EACH asset in the portfolio:
+1. Current health: DSCR, LTV, occupancy, NOI trend, debt maturity
+2. Distress classification: performing, watchlist, sub-performing, non-performing, defaulted
+3. Recovery strategy: recapitalize, restructure, sell, or hold. Size the capital needed for each path.
+
+Then analyze the INTERACTIONS:
+4. Which asset should get capital first? (ROI on rescue capital)
+5. Can proceeds from selling one asset fund the rescue of another?
+6. What is the optimal liquidation sequence if you must raise cash?
+7. Total fund-level impact: NAV, leverage ratio, LP distributions
+
+This is a crisis management exercise. Be specific with every number."""},
+
+    {"task_type": "portfolio_refinancing_wave", "d": "high", "graph_type": "portfolio",
+     "p": """REFINANCING WAVE — multiple loans in this portfolio mature within 24 months. Analyze the sequential refinancing strategy.
+
+For each maturing loan:
+1. Current terms vs market terms — calculate the rate gap and DSCR impact
+2. Maximum new loan proceeds at today's LTV/DSCR constraints
+3. Equity gap (if any) — how much fresh capital is needed?
+4. Lender options: same lender extension, new lender refi, CMBS, agency, debt fund
+
+Then the portfolio-level analysis:
+5. Optimal refinancing SEQUENCE — which loan should refi first? Why?
+6. Can refinancing one asset (with cash-out) fund the equity gap on another?
+7. Total capital requirement across all refis
+8. What happens if capital markets close for 6 months mid-sequence?
+
+Show every calculation. Rate each refi's feasibility (0-1)."""},
+
+    # ── Market Comparable Graphs ──
+    {"task_type": "market_comp_valuation", "d": "high", "graph_type": "market",
+     "p": """COMPARABLE SALES ANALYSIS — use these market comparables to value a target property.
+
+Given the comparable transactions:
+1. Adjust each comp for: size, age, location, tenant quality, lease term, condition, date of sale
+2. Calculate adjusted $/SF or $/unit for each comp
+3. Determine the valuation range (low, mid, high) based on adjusted comps
+4. Apply a direct capitalization approach using comp-derived cap rates
+5. Reconcile the sales comparison approach with the income approach
+6. Identify which comp is MOST relevant and why
+7. Flag any comps that should be excluded or weighted differently
+
+Present as an appraisal report section with specific adjustments and final value conclusion."""},
+
+    {"task_type": "market_pricing_dynamics", "d": "high", "graph_type": "market",
+     "p": """MARKET PRICING DYNAMICS — analyze how recent transactions in this market reveal pricing trends and investment opportunities.
+
+Using the comparable deals:
+1. Map the pricing trajectory — are cap rates compressing, expanding, or stable?
+2. Calculate implied risk premium vs treasuries for each transaction
+3. Identify pricing anomalies — any deals significantly above/below trend?
+4. Segment by buyer type (institutional, private, REIT) — how does pricing differ?
+5. Forward pricing estimate — where will cap rates be in 12 months given macro conditions?
+6. Investment recommendation — is this market overpriced, fairly priced, or undervalued?
+
+Use specific numbers from each comparable. Present as a market intelligence brief."""},
+
+    {"task_type": "market_supply_demand", "d": "high", "graph_type": "market",
+     "p": """SUPPLY-DEMAND ANALYSIS — analyze this market's competitive landscape using the comparable properties and deals.
+
+Evaluate:
+1. Current supply: existing inventory, vacancy rates, absorption trends
+2. New supply: pipeline, under construction, planned — delivery timeline
+3. Demand drivers: employment growth, population migration, industry trends
+4. Rent trajectory: current asking vs effective, concessions, YoY growth
+5. Competitive positioning: where does each property rank vs peers?
+6. Investment timing: is now the right entry point? What would you wait for?
+
+Quantify each point with specific data from the comparables. Provide a 12-24 month outlook."""},
+]
+
+# ── Deal Graph Generator ──
+
+LENDER_TYPES = ["Regional Bank", "National Bank", "Insurance Company", "CMBS Servicer",
+                "Credit Union", "Debt Fund", "Agency Lender"]
+FUND_TYPES = ["Core Fund", "Core-Plus Fund", "Value-Add Fund", "Opportunistic Fund",
+              "Debt Fund", "REIT", "Family Office"]
+
+
+def generate_deal_graph(graph_type: str, seed: int, index: int) -> dict:
+    """Generate a multi-deal graph scenario with 3-8 deals + macro overlay."""
+    rng = _seed_rng(f"graph-{graph_type}", seed, index)
+
+    # Pick macro environment
+    macro_key = rng.choice(list(MACRO_ENVIRONMENTS.keys()))
+    macro = MACRO_ENVIRONMENTS[macro_key]
+
+    # Number of deals in the graph
+    n_deals = rng.randint(3, 8)
+
+    # For lender graphs: one lender, multiple borrowers
+    # For portfolio graphs: one owner, multiple assets
+    # For market graphs: multiple transactions in one market
+    if graph_type == "lender":
+        entity_name = f"{rng.choice(['Pacific', 'Atlantic', 'Meridian', 'First National', 'Capital One', 'Heartland', 'Western', 'Summit', 'Keystone', 'Harbor'])} {rng.choice(LENDER_TYPES)}"
+        entity_label = "Lender"
+    elif graph_type == "portfolio":
+        entity_name = f"{rng.choice(['Blackstone', 'Starwood', 'Brookfield', 'KKR', 'Apollo', 'Ares', 'Cerberus', 'Colony', 'Lone Star', 'Oaktree'])} {rng.choice(FUND_TYPES)}"
+        entity_label = "Fund"
+    else:  # market
+        market_name, state, subs = rng.choice(MARKETS)
+        entity_name = f"{market_name} {rng.choice(list(CAPITAL_ASSETS.keys())).replace('_', ' ').title()} Market"
+        entity_label = "Market"
+
+    # Generate individual deals
+    deals = []
+    for i in range(n_deals):
+        asset_type = rng.choice(list(CAPITAL_ASSETS.keys()))
+        spec = CAPITAL_ASSETS[asset_type]
+        market_name, state, subs = rng.choice(MARKETS)
+
+        deal = {
+            "deal_id": chr(65 + i),  # A, B, C, ...
+            "asset_type": spec["display"],
+            "market": market_name,
+            "state": state,
+            "submarket": rng.choice(subs),
+        }
+
+        # Generate financial params
+        for key, val in spec["params"].items():
+            if isinstance(val, tuple) and len(val) >= 2:
+                lo, hi = val[0], val[1]
+                if isinstance(lo, int) and isinstance(hi, int):
+                    deal[key] = rng.randint(lo, hi)
+                elif isinstance(lo, float) or isinstance(hi, float):
+                    deal[key] = round(rng.uniform(float(lo), float(hi)), 4)
+
+        # Add maturity timeline
+        deal["maturity_months"] = rng.choice([6, 12, 18, 24, 36, 48])
+
+        # Property name
+        prefix = asset_type.replace("_", " ").title().split()[0]
+        suffix = rng.choice(["Tower", "Plaza", "Center", "Park", "Point"])
+        deal["property_name"] = f"{deal['submarket']} {prefix} {suffix}"
+
+        deals.append(deal)
+
+    # Calculate total exposure
+    total_exposure = sum(d.get("original_loan", d.get("noi", 5_000_000) * 12) for d in deals)
+
+    return {
+        "graph_type": graph_type,
+        "entity_name": entity_name,
+        "entity_label": entity_label,
+        "n_deals": n_deals,
+        "deals": deals,
+        "total_exposure": total_exposure,
+        "macro_state": macro_key,
+        "macro": macro,
+    }
+
+
+def format_deal_graph(graph: dict) -> str:
+    """Format a deal graph into prompt-friendly text."""
+    macro = graph["macro"]
+    lines = [
+        f"{'='*60}",
+        f"{graph['entity_label']}: {graph['entity_name']}",
+        f"Total CRE Exposure: ${graph['total_exposure']:,.0f}",
+        f"Number of Deals: {graph['n_deals']}",
+        f"{'='*60}",
+        "",
+        f"MACRO ENVIRONMENT: {macro['label']}",
+        f"  SOFR: {macro['sofr']}%",
+        f"  10yr Treasury: {macro['treasury_10yr']}%",
+        f"  Credit Spreads: {macro['credit_spreads']}",
+        f"  Lender Appetite: {macro['lender_appetite']}",
+        f"  Office Vacancy: {macro['office_vacancy']}%",
+        f"  Multifamily Vacancy: {macro['multifamily_vacancy']}%",
+        f"  CMBS Delinquency (Office): {macro['cmbs_delinquency_office']}%",
+        "",
+    ]
+
+    for deal in graph["deals"]:
+        lines.append(f"--- Deal {deal['deal_id']}: {deal['property_name']} ---")
+        lines.append(f"  Type: {deal['asset_type']}")
+        lines.append(f"  Location: {deal['submarket']}, {deal['market']}, {deal['state']}")
+        lines.append(f"  Maturity: {deal['maturity_months']} months")
+
+        for key, val in deal.items():
+            if key in ("deal_id", "asset_type", "market", "state", "submarket",
+                       "property_name", "maturity_months"):
+                continue
+            lines.append(_format_param(key, val))
+        lines.append("")
+
+    return "\n".join(lines)
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STREAM REGISTRY
@@ -711,6 +1334,8 @@ _STREAM_PROMPT_CATEGORY = {
     "equity_advisory": "investment_banker",
     "valuation_advisory": "capital_advisor",
     "deal_origination": "deal_originator",
+    "macro_causality": "distressed_specialist",
+    "deal_graph": "capital_advisor",
 }
 
 STREAMS = {
@@ -720,13 +1345,19 @@ STREAMS = {
     "equity_advisory":    {"tasks": EQUITY_ADVISORY_TASKS,    "assets": CAPITAL_ASSETS},
     "valuation_advisory": {"tasks": VALUATION_ADVISORY_TASKS, "assets": CAPITAL_ASSETS},
     "deal_origination":   {"tasks": DEAL_ORIGINATION_TASKS,   "assets": CAPITAL_ASSETS},
+    "macro_causality":    {"tasks": MACRO_CAUSALITY_TASKS,    "assets": CAPITAL_ASSETS},
+    "deal_graph":         {"tasks": DEAL_GRAPH_TASKS,         "assets": CAPITAL_ASSETS},
 }
 
 
-def _get_system_prompt(stream: str, rng: random.Random) -> str:
-    """Pick a system prompt from the stream's category."""
+def _get_system_prompt(stream: str, rng: random.Random) -> tuple[str, str]:
+    """Pick a system prompt from the stream's category with randomized format.
+    Returns (system_prompt, format_name)."""
     category = _STREAM_PROMPT_CATEGORY[stream]
-    return rng.choice(_SYSTEM_PROMPTS[category])
+    template = rng.choice(_SYSTEM_PROMPTS[category])
+    fmt_name, fmt_instructions = get_format_instructions(rng)
+    prompt = template.replace("<<<FORMAT_INSTRUCTIONS>>>", fmt_instructions)
+    return prompt, fmt_name
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -785,6 +1416,39 @@ def generate_skeleton(stream: str, seed: int, index: int) -> dict:
         sk["hold_period_years"] = rng.choice([3, 5, 7, 10])
         sk["gp_coinvest_pct"] = round(rng.uniform(0.05, 0.15), 4)
 
+    # Deal graph: generate multi-deal scenario instead of single deal
+    if stream == "deal_graph":
+        task = STREAMS[stream]["tasks"][index % len(STREAMS[stream]["tasks"])]
+        graph = generate_deal_graph(task.get("graph_type", "lender"), seed, index)
+        sk["_deal_graph"] = graph
+        sk["_deal_graph_text"] = format_deal_graph(graph)
+        sk["graph_type"] = graph["graph_type"]
+        sk["entity_name"] = graph["entity_name"]
+        sk["n_deals"] = graph["n_deals"]
+
+    # Macro causality: overlay a macro environment
+    if stream == "macro_causality":
+        macro_key = rng.choice(list(MACRO_ENVIRONMENTS.keys()))
+        macro = MACRO_ENVIRONMENTS[macro_key]
+        sk["macro_state"] = macro_key
+        sk["macro_year"] = macro["year"]
+        sk["macro_label"] = macro["label"]
+        sk["macro_sofr"] = macro["sofr"]
+        sk["macro_treasury_10yr"] = macro["treasury_10yr"]
+        sk["macro_credit_spreads"] = macro["credit_spreads"]
+        sk["macro_lender_appetite"] = macro["lender_appetite"]
+        sk["macro_max_ltv"] = macro["max_ltv"]
+        sk["macro_min_dscr"] = macro["min_dscr"]
+        sk["macro_typical_spread_bps"] = macro["typical_spread_bps"]
+        sk["macro_narrative"] = macro["narrative"]
+        # Set asset-type-specific vacancy
+        vacancy_key = f"{asset_type.split('_')[0]}_vacancy"
+        if vacancy_key in macro:
+            sk["macro_vacancy"] = macro[vacancy_key]
+        else:
+            sk["macro_vacancy"] = macro.get("office_vacancy", 15.0)
+        sk["macro_cmbs_delinquency"] = macro["cmbs_delinquency_office"]
+
     # Property name
     prefix = asset_type.replace("_", " ").title().split()[0]
     suffix = rng.choice(["Tower", "Plaza", "Center", "Place", "Commons", "Park", "Point", "Crossing"])
@@ -796,6 +1460,10 @@ def generate_skeleton(stream: str, seed: int, index: int) -> dict:
 
 def format_skeleton(sk: dict) -> str:
     """Format skeleton into prompt-friendly text."""
+    # Deal graph uses its own multi-deal format
+    if "_deal_graph_text" in sk:
+        return sk["_deal_graph_text"]
+
     lines = [f"Property: {sk['property_name']}", f"Type: {sk['asset_type_display']}",
              f"Location: {sk['submarket']}, {sk['market_name']}, {sk['state']}", ""]
 
@@ -859,18 +1527,107 @@ _NUM_PATTERN = re.compile(r"\$[\d,.]+|\d+\.?\d*\s*%|\d{1,3}(,\d{3})+")
 _DEGEN_PATTERN = re.compile(r"(.{40,})\1{2,}")
 
 
-def quality_check(content: str) -> tuple[bool, str]:
-    if len(content) < 500:
+def quality_check(content: str, fmt_name: str = "trajectory_5step") -> tuple[bool, str]:
+    # Universal checks
+    if len(content) < 300:
         return False, "too_short"
-    steps_found = sum(1 for p in _TRAJ_PATTERNS if p.search(content))
-    if steps_found < 3:
-        return False, f"trajectory_{steps_found}/5"
-    nums = _NUM_PATTERN.findall(content)
-    if len(nums) < 3:
-        return False, "no_financials"
     if _DEGEN_PATTERN.search(content):
         return False, "degenerate"
+    nums = _NUM_PATTERN.findall(content)
+    if len(nums) < 2:
+        return False, "no_financials"
+
+    # Format-specific checks
+    if fmt_name == "trajectory_5step":
+        if len(content) < 500:
+            return False, "too_short_traj"
+        steps_found = sum(1 for p in _TRAJ_PATTERNS if p.search(content))
+        if steps_found < 3:
+            return False, f"trajectory_{steps_found}/5"
+    elif fmt_name == "trajectory_3step":
+        has_assess = bool(re.search(r"ASSESS|assess", content))
+        has_analyze = bool(re.search(r"ANALY[ZS]|analy[zs]", content))
+        has_decide = bool(re.search(r"DECIDE|decide|RECOMMEND|recommend", content))
+        if sum([has_assess, has_analyze, has_decide]) < 2:
+            return False, "missing_3step_structure"
+    elif fmt_name == "json_intelligence_object":
+        # Must contain valid-ish JSON
+        if not ('{' in content and '}' in content):
+            return False, "no_json"
+        if "verdict" not in content.lower() and "confidence" not in content.lower():
+            return False, "json_missing_fields"
+    elif fmt_name in ("executive_brief", "narrative_memo", "conversational"):
+        # Free-form: just need substance (financials + length)
+        if len(content) < 400:
+            return False, "too_short_freeform"
+        if len(nums) < 3:
+            return False, "no_financials_freeform"
+    elif fmt_name == "tabular_analysis":
+        if '|' not in content and 'Verdict' not in content:
+            return False, "no_table"
+    elif fmt_name == "risk_matrix":
+        risk_words = sum(1 for w in ["risk", "probability", "impact", "mitigation", "HIGH", "MED", "LOW"]
+                        if w.lower() in content.lower())
+        if risk_words < 2:
+            return False, "no_risk_matrix"
+
     return True, "pass"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SCHEMA VALIDATORS — ported from swarm-capital-markets/schemas.js
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_VALID_DECISIONS = {"approve", "approve_with_conditions", "restructure",
+                    "decline", "watchlist", "distressed_opportunity"}
+_VALID_CONSTRAINTS = {"ltv", "dscr", "debt_yield"}
+
+
+def schema_validate(content: str) -> tuple[bool, list[str]]:
+    """Validate structured output against canonical decision_output schema.
+    Returns (valid, errors). Non-JSON content passes automatically."""
+    errors = []
+    try:
+        json_match = re.search(r'\{[\s\S]*\}', content)
+        if not json_match:
+            return True, []
+        obj = json.loads(json_match.group())
+    except (json.JSONDecodeError, AttributeError):
+        return True, []
+
+    # Only validate decision-like outputs
+    if "decision" not in obj and "confidence" not in obj:
+        return True, []
+
+    if "decision" in obj and obj["decision"] not in _VALID_DECISIONS:
+        errors.append(f"invalid_decision:{obj['decision']}")
+    if "confidence" in obj:
+        c = obj["confidence"]
+        if not isinstance(c, (int, float)) or c < 0 or c > 1:
+            errors.append(f"confidence_range:{c}")
+    if "analysis" in obj and isinstance(obj["analysis"], dict):
+        a = obj["analysis"]
+        if "dscr" in a and isinstance(a["dscr"], (int, float)):
+            if a["dscr"] < 0 or a["dscr"] > 5:
+                errors.append(f"dscr_range:{a['dscr']}")
+        if "ltv" in a and isinstance(a["ltv"], (int, float)):
+            if a["ltv"] < 0 or a["ltv"] > 1.5:
+                errors.append(f"ltv_range:{a['ltv']}")
+        if "cap_rate" in a and isinstance(a["cap_rate"], (int, float)):
+            if a["cap_rate"] < 0 or a["cap_rate"] > 0.30:
+                errors.append(f"cap_rate_range:{a['cap_rate']}")
+        if "debt_yield" in a and isinstance(a["debt_yield"], (int, float)):
+            if a["debt_yield"] < 0 or a["debt_yield"] > 0.30:
+                errors.append(f"debt_yield_range:{a['debt_yield']}")
+        if "binding_constraint" in a and a["binding_constraint"] not in _VALID_CONSTRAINTS:
+            errors.append(f"invalid_constraint:{a['binding_constraint']}")
+    if "risk_flags" in obj:
+        if not isinstance(obj["risk_flags"], list):
+            errors.append("risk_flags_not_array")
+        elif len(obj["risk_flags"]) > 5:
+            errors.append(f"risk_flags_count:{len(obj['risk_flags'])}")
+
+    return len(errors) == 0, errors
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -947,7 +1704,7 @@ def update_progress(stream: str, written: int, target: int,
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def grind_pair(stream: str, skeleton: dict, task: dict, task_idx: int,
-               system_prompt: str) -> dict | None:
+               system_prompt: str, fmt_name: str = "trajectory_5step") -> dict | None:
     summary = format_skeleton(skeleton)
     user_msg = f"{task['p']}\n\n{summary}"
 
@@ -959,8 +1716,8 @@ def grind_pair(stream: str, skeleton: dict, task: dict, task_idx: int,
     if not content:
         return None
 
-    # Quality gate
-    passed, reason = quality_check(content)
+    # Quality gate — format-aware
+    passed, reason = quality_check(content, fmt_name)
     tier = "gen"
 
     if not passed:
@@ -971,6 +1728,9 @@ def grind_pair(stream: str, skeleton: dict, task: dict, task_idx: int,
         if not content:
             return None
         tier = "rewrite"
+
+    # Schema validation (non-blocking — log errors in metadata)
+    schema_valid, schema_errors = schema_validate(content)
 
     return {
         "id": f"swarmcapital-{stream}-{skeleton['deal_id']}-t{task_idx}",
@@ -990,7 +1750,10 @@ def grind_pair(stream: str, skeleton: dict, task: dict, task_idx: int,
             "state": skeleton.get("state", ""),
             "model": GEN_MODEL if tier == "gen" else PASS_MODEL,
             "tier": tier,
-            "source": "cre-capital-cook-v1",
+            "format": fmt_name,
+            "schema_valid": schema_valid,
+            "schema_errors": schema_errors if schema_errors else None,
+            "source": "cre-capital-cook-v2",
         },
     }
 
@@ -1050,16 +1813,17 @@ def grind_stream(stream: str, target: int | None = None, seed: int = SEED):
     t0 = time.time()
     session_start = written
 
-    # Build work queue with system prompt per deal
+    # Build work queue with system prompt + format per task (not per deal)
     work_queue = []
     for deal_idx in range(deals_needed):
         deal_key = f"{stream}-{deal_idx}"
         if deal_key in done_deals:
             continue
-        deal_rng = _seed_rng(f"{stream}-sysprompt", seed, deal_idx)
-        sys_prompt = _get_system_prompt(stream, deal_rng)
         for task_idx, task in enumerate(tasks):
-            work_queue.append((deal_idx, task_idx, task, sys_prompt))
+            # Each task gets its own format for maximum diversity
+            task_rng = _seed_rng(f"{stream}-fmt", seed, deal_idx * 100 + task_idx)
+            sys_prompt, fmt_name = _get_system_prompt(stream, task_rng)
+            work_queue.append((deal_idx, task_idx, task, sys_prompt, fmt_name))
         if written + len(work_queue) >= target:
             break
 
@@ -1071,13 +1835,13 @@ def grind_stream(stream: str, target: int | None = None, seed: int = SEED):
 
     def process_task(item):
         nonlocal written, gen_pass, rewritten, failed
-        deal_idx, task_idx, task, sys_prompt = item
+        deal_idx, task_idx, task, sys_prompt, fmt_name = item
 
         if written >= target:
             return None
 
         skeleton = generate_skeleton(stream, seed, deal_idx)
-        rec = grind_pair(stream, skeleton, task, task_idx, sys_prompt)
+        rec = grind_pair(stream, skeleton, task, task_idx, sys_prompt, fmt_name)
 
         if rec:
             with file_lock:
@@ -1271,6 +2035,7 @@ def main():
     WORKERS = args.workers
 
     # --quality mode: 397B flagship for ALL generation (max quality)
+    global GEN_MODEL, PASS_MODEL
     if args.quality:
         GEN_MODEL = QUALITY_MODEL
         PASS_MODEL = QUALITY_MODEL
