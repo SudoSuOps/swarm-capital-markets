@@ -9,7 +9,7 @@ SwarmCapitalMarkets is a CRE capital markets intelligence engine — the trainin
 Three layers:
 1. **Cook Pipeline** (`data/`): 8-stream capital markets data factory + golden pairs + RPA + mutations + assembly
 2. **Eval Suite** (`eval/`): 180 institutional-grade prompts across 11 CRE domains, 5 difficulty tiers
-3. **Skills** (`skills/`, `worker/`): 7 installable capital markets AI skills with SKILL.md specs, JS modules, validators
+3. **Skills** (`skills/`): 7 installable capital markets AI skills with SKILL.md specs, validators, schemas
 
 ## Cook Architecture
 
